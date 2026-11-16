@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Groundwork — Networking Without the Noise</title>
+<title>Jobsly — Your Personalized Career Coach</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -122,7 +122,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:tran
   <header class="top">
     <div class="logo">
       <span class="logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 18h16M7 14l5-8 5 8"/></svg></span>
-      <span id="brand">Groundwork</span>
+      <span id="brand">Jobsly</span>
     </div>
     <span style="display:flex;gap:8px;align-items:center"><a class="ghost" href="index.html" style="text-decoration:none">← Product Page</a><button class="ghost hidden" id="resetBtn">Sign out &amp; start over</button></span>
   </header>
@@ -130,14 +130,14 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:tran
   <!-- LANDING -->
   <section id="landing" class="hero">
     <div>
-      <span class="eyebrow">Professional networking, rebuilt</span>
-      <h1>Your career, <em>minus the noise.</em></h1>
-      <p class="lead">Groundwork starts with a short conversation with an AI guide who learns what you actually want, then shows you real opportunities, not a feed.</p>
+      <span class="eyebrow">Your personalized career coach</span>
+      <h1>Know where you're <em>headed.</em></h1>
+      <p class="lead">A short conversation with your coach figures out what you're really after, then gives you a clear plan: roles worth targeting and your next moves.</p>
       <ul class="fixes">
-        <li><span class="x">✓</span><span><s>Applications into the void</s> → Employers commit to a reply within 7 days</span></li>
-        <li><span class="x">✓</span><span><s>Endless engagement-bait feed</s> → No algorithmic feed at all</span></li>
-        <li><span class="x">✓</span><span><s>"Competitive salary"</s> → Every posting shows a real pay range</span></li>
-        <li><span class="x">✓</span><span><s>Recruiter spam</s> → Only matched recruiters can reach you</span></li>
+        <li><span class="x">✓</span><span><s>Mass-applying to everything</s> → A short list of roles worth your time</span></li>
+        <li><span class="x">✓</span><span><s>Generic career advice</s> → A plan built around your goals and timeline</span></li>
+        <li><span class="x">✓</span><span><s>Waiting weeks for an appointment</s> → Coaching whenever you need it</span></li>
+        <li><span class="x">✓</span><span><s>A noisy social feed</s> → No feed, just your plan</span></li>
       </ul>
     </div>
     <form class="card signin" id="signinForm" autocomplete="on">
@@ -156,7 +156,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:tran
   <section id="chat" class="card chat-shell hidden">
     <div class="chat-head">
       <div class="avatar">S</div>
-      <div><div class="who">Scout</div><div class="sub">Your onboarding guide</div></div>
+      <div><div class="who">Scout</div><div class="sub">Your career coach</div></div>
       <div class="progress" aria-label="Onboarding progress"><span id="prog"></span></div>
     </div>
     <div class="msgs" id="msgs" aria-live="polite"></div>
@@ -172,8 +172,8 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:tran
 </div>
 
 <script>
-const APP_NAME = "Groundwork";
-const STORE = "groundwork-demo-v1";
+const APP_NAME = "Jobsly";
+const STORE = "jobsly-demo-v1";
 const $ = id => document.getElementById(id);
 
 /* ---------- persistence ---------- */
@@ -209,22 +209,22 @@ function pick(text, options){ const t=text.toLowerCase(); return options.find(o 
 /* ---------- onboarding script (swap for a real LLM later) ---------- */
 const STEPS = [
   { key:"status",
-    ask: () => `Hi ${firstName()}! I'm Scout. I'll ask a few quick questions so ${APP_NAME} can show you things that actually fit, not a random feed.\n\nFirst: where are you right now?`,
-    chips:["Student","Employed, looking around","Between jobs","Freelancer or founder"] },
+    ask: () => `Hi ${firstName()}! I'm Scout, your career coach at ${APP_NAME}. I'll ask a few quick questions, then put together a plan that fits you.\n\nFirst: where are you right now?`,
+    chips:["Current student","Recent graduate","Working, looking to advance","Working, looking to pivot"] },
   { key:"field",
     ack: a => {
       const t=a.status.toLowerCase();
       if (t.includes("student")) return "Great, starting early is a real advantage.";
-      if (t.includes("between")) return "Got it. Let's make this next move a good one.";
-      if (t.includes("free")||t.includes("found")) return "Nice, building your own thing takes nerve.";
-      return "Makes sense, the best time to look is when you don't have to.";
+      if (t.includes("graduate")) return "Congrats on graduating. Let's make the next step count.";
+      if (t.includes("pivot")) return "A pivot, exciting. Let's find where your skills carry over.";
+      return "Makes sense. Let's map out your next level.";
     },
     ask: () => "What field or role are you in, or aiming for? (e.g., marketing, financial analysis, software, operations)",
     chips:[] },
   { key:"goal",
     ack: a => { const f=classify(a.field); return FIELDS.includes(f) ? `${f.cat}, good. There's a lot of movement in that space right now.` : `${titleCase(a.field)}, noted. I'll tailor things around that.`; },
     ask: () => "What do you most want out of this platform?",
-    chips:["Land a new job","Switch careers","Grow my network","Find clients or cofounders"] },
+    chips:["Figure out my direction","Land a new job","Switch careers","Grow my network"] },
   { key:"workstyle",
     ask: () => "How do you like to work?",
     chips:["Remote","Hybrid","On-site","Open to anything"] },
@@ -295,7 +295,7 @@ function movesFor(goal, f, skills){
   if (g.includes("switch")) return [`Map how ${s} transfers into ${f.cat}. Scout has drafted a starting list.`, `Book short chats with 2 people who switched into ${f.cat} (warm intros below).`, `Ship one small ${f.cat.toLowerCase()} project to show, not tell.`];
   if (g.includes("network")) return [`Follow 5 people in ${f.cat}. No feed, just their real updates.`, `Join the ${f.cat} circle in your area this week.`, `Offer one useful intro. Generosity compounds.`];
   if (g.includes("client")||g.includes("cofounder")) return [`Publish a one-line offer: what you do with ${s}.`, `Browse founders and teams looking for ${f.cat.toLowerCase()} help.`, `Set your availability so only fitting requests reach you.`];
-  return [`Turn on "Open to roles" privately. Only verified, matched recruiters see it.`, `Apply to the 3 matches below. Each one guarantees a reply.`, `Ask one person in ${f.cat} for a 15-minute chat.`];
+  return [`Update your LinkedIn headline to match your target role in ${f.cat}.`, `Apply to the 3 roles below. Quality over quantity.`, `Ask one person in ${f.cat} for a 15-minute chat.`];
 }
 
 function renderSnapshot(){
@@ -306,7 +306,7 @@ function renderSnapshot(){
   const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   $("snapshot").innerHTML = `
     <div class="snap-head">
-      <div><h1>${esc(firstName())}'s Career Snapshot</h1><p>Built from your conversation with Scout. Edit anytime.</p></div>
+      <div><h1>${esc(firstName())}'s Career Plan</h1><p>Built from your conversation with Scout, your career coach.</p></div>
       <button class="ghost" id="redoBtn">Redo onboarding</button>
     </div>
     <div class="grid">
@@ -330,20 +330,20 @@ function renderSnapshot(){
         <ol class="moves">${movesFor(a.goal||"",f,skills).map(m=>`<li>${esc(m)}</li>`).join("")}</ol>
       </div>
       <div class="card panel span2">
-        <h3>Opportunities that fit</h3>
+        <h3>Roles worth applying to</h3>
         <div class="jobs">${jobs.map(j=>`
           <div class="job">
             <h4>${esc(j.role)}</h4>
             <div class="co">${esc(j.co)} · ${esc(loc)}</div>
             <div class="pay">${esc(j.pay)}</div>
             <div class="badges">
-              <span class="badge">✓ Verified employer</span>
-              <span class="badge">✓ Reply guaranteed in 7 days</span>
+              <span class="badge">✓ Fits your goals</span>
+              <span class="badge">✓ Pay range shown</span>
             </div>
           </div>`).join("")}</div>
         <div class="demo-note">Prototype: companies and postings are sample data.</div>
       </div>
-      <div class="promise span2"><strong>Our promise:</strong>&nbsp;no algorithmic feed, no ghosting, no hidden pay. Just people and opportunities that fit.</div>
+      <div class="promise span2"><strong>Our approach:</strong>&nbsp;apply smarter, not more. A few roles that truly fit beat a hundred applications.</div>
     </div>`;
   $("redoBtn").onclick=()=>{ state.answers={}; state.done=false; save(); show("chat"); };
 }
