@@ -4,5 +4,5 @@
 window.JOBSLY_CONFIG = {
   posthogKey: "phc_vqdqHqtnd8PYZFDgTuEJaYSLMe3zjYnh3UWRNZjSKqEd",                          // paste your PostHog project API key (starts with phc_)
   posthogHost: "https://us.i.posthog.com",  // use https://eu.i.posthog.com if your PostHog account is in the EU
-  liveAppUrl: ""                            // the Render address, e.g. "https://jobsdoctor.onrender.com" (no trailing slash)
+  liveAppUrl: "https://jobsdoctor.onrender.com"                            // the Render address, e.g. "https://jobsdoctor.onrender.com" (no trailing slash)
 };

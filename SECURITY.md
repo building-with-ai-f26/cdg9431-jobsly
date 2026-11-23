@@ -11,7 +11,7 @@ JobsDoctor sends a visitor's intake answers to Claude through our own Python ser
 
 | # | Check | Result |
 |---|---|---|
-| 1 | **Access controls (AI app, no database):** search the live site's code for the API key; call the AI route 30 times | No key in the site's code. Rate limit returns **429** from call 21 onward (tested locally; live results below). |
+| 1 | **Access controls (AI app, no database):** search the live site's code for the API key; call the AI route 30 times | No key in the live site's code. On the live site, the rate limit returned **429** for 14 of 30 rapid calls (see live results below). |
 | 2 | **Secret keys stay on the server:** search repo and live site for `sb_secret_`, `service_role`, `sk-or-`, `sk-ant-`, `sk-proj-`, `sk_live_` | Repo (all files **and full Git history**): no real keys. One match is the class template's placeholder in `.env.example` (`sk-or-v1-replace-with-your-key`), not a real key. PostHog `phc_` key in `docs/config.js` is public by design. |
 | 3 | **File storage private** | Not applicable: the app stores no files. |
 | 4 | **Protect production from the agent** | "Ask me first" list added to `AGENTS.md`. No database, so no backup is needed. |
@@ -44,7 +44,18 @@ Also changed: error messages shown to visitors no longer mention key files or in
 
 ## Live-site results (Render)
 
-_Run `security_check.py` (press Run in VS Code) against the live Render address after deploying, and paste its output here._
+Live site: **https://jobsdoctor.onrender.com** (checked Nov 23, 2026 with `security_check.py`). **Result: PASS.**
+
+```
+/: HTTP 200, NO secret keys found
+/app.html: HTTP 200, NO secret keys found
+/config.js: HTTP 200, NO secret keys found
+/analytics.js: HTTP 200, NO secret keys found
+NO secret keys in project files
+30 calls -> 16 succeeded, 14 returned 429 (limit kicked in at call 17)
+```
+
+The limit kicked in at call 17 rather than 21 because the same visitor had just completed most of a test visit, using 4 of their 20 calls in that 10-minute window. This confirms the limit is counted per visitor. A full end-to-end visit (intake, waiting room, prescription) was also completed on the live site before the check.
 
 ## Remaining issues
 
