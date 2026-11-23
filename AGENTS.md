@@ -1,19 +1,19 @@
-# AGENTS.md: Jobsly
+# AGENTS.md: JobsDoctor
 
-Jobsly is a personalized AI career coach. The user chats with **Scout** (Claude) for six short questions, and Jobsly turns the conversation into a **Career Plan** dashboard: guiding principle, profile, stretch goal, three options with pay estimates, questions to ask, how to get the meeting, a pitch, next steps, and a closing note.
+JobsDoctor ("Resuscitate your job search") is an AI career clinic. The user clicks **Get Started**, checks in with a first name, and does a short intake with **Nurse Ruby** (Claude): eight AI steps, including two reflective questions and a step where the nurse reflects back the criterion behind the job title for the user to confirm or correct, plus a closing "anything else?" question. An animated waiting room (nurse taking notes, career-vitals monitor, Rx pad) runs for at least 20 seconds while the doctor (Claude) writes the **job prescription**: diagnosis and guiding principle, profile, stretch goal, areas to target with roles and pay estimates, questions to ask employers (the first tests the guiding principle), how to get the meeting, a pitch, next steps, and a closing note.
 
 ## Project structure
 
 ```
 .
 ├── server.py          Local server: serves docs/, holds the API key, calls Claude
-├── .env               Your Anthropic API key (created on first run; never committed)
+├── .vscode/launch.json  The Run button configuration for VS Code
 ├── .env.example       Template for .env
 ├── .gitignore         Keeps .env out of Git
 ├── AGENTS.md          This file
 └── docs/              Everything the browser loads (also published by GitHub Pages)
     ├── index.html     Product Page: pitch, screenshots, PRD v2, build log
-    ├── app.html       The app: sign-in, coaching chat, Career Plan dashboard
+    ├── app.html       The app: landing, check-in, intake chat, waiting room, prescription
     ├── config.js      Public browser settings (PostHog project key; no secrets)
     ├── analytics.js   Loads PostHog: pageviews, clicks, session replay
     └── ai-demo.png    Screenshot of a real AI run, shown on the Product Page
@@ -23,22 +23,20 @@ Jobsly is a personalized AI career coach. The user chats with **Scout** (Claude)
 
 Requirements: Python 3 (no packages to install) and an Anthropic API key.
 
-1. Open Terminal and go to the project folder, for example:
-   `cd ~/Downloads/jobsly`
-2. Start the server:
-   `python3 server.py`
-3. The first time, paste your Anthropic API key when asked. It is saved to `.env` in this folder only.
-4. Open **http://localhost:8000/app.html** in your browser.
-5. Leave Terminal open while using the app. Press **Control+C** to stop.
+**In VS Code (easiest):** open the project folder, then press **Run** (F5) and choose **Run JobsDoctor**. The app opens in your browser.
 
-If macOS asks to install "command line developer tools" when you run `python3`, click Install, then run the command again.
+**In Terminal:** `cd` into the project folder and run `python3 server.py`.
+
+The first time, paste your Anthropic API key when asked. It is saved once in `~/.jobsdoctor/.env` (your home folder, outside every project), so new builds use it automatically. A `.env` file in the project folder still works and takes priority.
+
+If port 8000 is busy (for example, an older build is still running), the server uses the next free port and prints the address. Add `--no-browser` to skip opening the browser. Press **Control+C** to stop.
 
 ## How it works
 
 1. `app.html` collects answers and sends the conversation to `POST /api/chat` on the local server.
 2. `server.py` adds the coaching instructions (kept server-side) and calls the Claude Messages API.
-   - `mode: "chat"`: Scout asks one tailored question (5 in total). The app adds a final "anything else?" question.
-   - `mode: "plan"`: Claude returns the Career Plan as JSON in a fixed shape, which `app.html` renders.
+   - `mode: "chat"`: the nurse asks one question for intake step `turn` (1 to 8). Each step's job is defined in `STAGES` in `server.py`; step 6 is the reflection. The app adds a final "anything else?" question.
+   - `mode: "plan"`: Claude returns the prescription as JSON in a fixed shape (`PLAN_PROMPT`), which `renderPlan()` in `app.html` renders. The waiting room runs at least `MIN_WAIT_MS` (20 s) and until the prescription arrives.
 3. The server prints the token usage and cost of every call in Terminal.
 
 On GitHub Pages there is no server, so the app shows a notice that live AI runs locally in this build.
@@ -47,7 +45,7 @@ On GitHub Pages there is no server, so the app shows a notice that live AI runs 
 
 | Setting | Where | Default |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | `.env` | required |
+| `ANTHROPIC_API_KEY` | `~/.jobsdoctor/.env` (or project `.env`) | required |
 | `CLAUDE_MODEL` | `.env` | `claude-sonnet-5-5` |
 | `PORT` | `.env` or environment | `8000` |
 | PostHog key and host | `docs/config.js` | empty (analytics off) |
