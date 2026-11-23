@@ -106,11 +106,15 @@ input[type=text]:focus{outline:2px solid var(--red);outline-offset:1px;border-co
 .typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:blink 1s infinite}
 .typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
 @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
-.chips{display:flex;flex-wrap:wrap;gap:8px;padding:0 18px 12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 4px;animation:fadeUp .3s ease}
+.chips:empty{display:none}
 .chip{background:var(--surface);border:1px solid var(--red);color:var(--red);padding:8px 14px;border-radius:999px;font-size:14px;font-weight:500}
 .chip:hover{background:var(--red-soft)}
+.chips.menu{flex-direction:column;align-items:stretch;max-width:340px}
+.chips.menu .chip{text-align:left;padding:11px 16px;font-size:15px;border-radius:12px}
 .composer{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--line)}
-.composer input{flex:1}
+.composer textarea{flex:1;resize:none;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font:inherit;line-height:1.4;max-height:150px;overflow-y:auto}
+.composer textarea:focus{outline:2px solid var(--red);outline-offset:1px;border-color:transparent}
 .send{background:var(--red);color:var(--on-red);border:0;border-radius:12px;padding:0 18px;font-weight:600}
 .notice{align-self:stretch;background:var(--red-soft);border-radius:12px;padding:12px 14px;font-size:14.5px}
 .retry{margin-top:8px;background:var(--red);color:var(--on-red);border:0;border-radius:8px;padding:7px 12px;font-weight:600}
@@ -313,7 +317,7 @@ input[type=text]:focus{outline:2px solid var(--red);outline-offset:1px;border-co
       <h2>Welcome in.</h2>
       <p>What's your first name? Our intake nurse will take it from there.</p>
       <label for="nameIn">First name</label>
-      <input type="text" id="nameIn" placeholder="Maya" required maxlength="40">
+      <input type="text" id="nameIn" placeholder="Your first name" required maxlength="40">
       <button class="btn" type="submit">Begin intake →</button>
       <div class="fine">Prototype: your answers are saved in this browser only.</div>
     </form>
@@ -329,7 +333,7 @@ input[type=text]:focus{outline:2px solid var(--red);outline-offset:1px;border-co
     <div class="msgs" id="msgs" aria-live="polite"></div>
     <div class="chips" id="chips"></div>
     <form class="composer" id="composer">
-      <input type="text" id="msgIn" placeholder="Type your answer…" autocomplete="off" aria-label="Your answer">
+      <textarea id="msgIn" rows="1" placeholder="Type your answer…" aria-label="Your answer"></textarea>
       <button class="send" type="submit">Send</button>
     </form>
   </section>
@@ -460,18 +464,24 @@ input[type=text]:focus{outline:2px solid var(--red);outline-offset:1px;border-co
 
 <script>
 const STORE = "jobsdoctor-v1";
-const AI_STEPS = 8;                  // questions the nurse asks with real AI
+// Intake steps: 1 = status menu (scripted), 2 = "What brings you in today?" (scripted),
+// 3-9 = the nurse's AI questions, 10 = closing "anything else?" (scripted).
+// Students also get a tap-to-choose graduation question between steps 1 and 2.
+const AI_STEPS = 9;                  // last step the AI asks
 const TOTAL_STEPS = AI_STEPS + 1;    // plus the closing "anything else?" question
 const REFLECT_STEP = 6;              // the step where the nurse reflects back what she's hearing
 const MIN_WAIT_MS = 20000;           // minimum length of the waiting-room sequence
 const FINAL_Q = "Last one before the doctor sees you: is there anything else I should note in your chart? Worries, hopes, anything at all.";
 const STATUS_CHIPS = ["Current student","Recent graduate","Working, looking to advance","Working, looking to pivot"];
+const GRAD_CHIPS = ["This school year","Next school year","In two years or more"];
+const GRAD_Q = "Good to know. When do you graduate?";
+const RUNDOWN_Q = "What brings you in today? Tell me in a short paragraph where you're at, your background, and what you're looking for.";
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const track = (name, props) => { try { window.posthog && posthog.capture && posthog.capture(name, props||{}); } catch(e){} };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function fresh(){ return { name:"", messages:[], turn:0, plan:null, checked:{}, opened:false }; }
+function fresh(){ return { name:"", messages:[], turn:0, plan:null, checked:{}, opened:false, gradAsked:false, reflectIdx:-1 }; }
 function load(){ try { return JSON.parse(localStorage.getItem(STORE)); } catch(e){ return null; } }
 function save(){ try { localStorage.setItem(STORE, JSON.stringify(state)); } catch(e){} }
 let state = load() || fresh();
@@ -487,7 +497,18 @@ async function api(body){
   if (!res.ok || data.error) throw new Error(data.error || "Something went wrong. Please try again.");
   return data;
 }
-const OFFLINE_MSG = "Our nurse is only on duty in the local version for now, which keeps the AI key private. See the About page for a recorded visit.";
+const LIVE_URL = ((window.JOBSLY_CONFIG || {}).liveAppUrl || "").replace(/\/$/, "");
+const IS_LOCAL = location.protocol === "file:" || ["localhost","127.0.0.1"].includes(location.hostname);
+const OFFLINE_MSG = IS_LOCAL
+  ? "The nurse can't reach the JobsDoctor server. Start it: open server.py in VS Code and press Run (▶), then use the browser tab it opens (the address starts with http://localhost)."
+  : LIVE_URL
+  ? "This copy of JobsDoctor can't reach our nurse. Please use the live clinic instead."
+  : "Our nurse is only on duty in the local version for now, which keeps the AI key private. See the About page for a recorded visit.";
+function offlineLink(){
+  if (!LIVE_URL) return null;
+  const a = document.createElement("a"); a.href = LIVE_URL + "/app.html"; a.className = "retry"; a.style.display = "inline-block"; a.style.textDecoration = "none";
+  a.textContent = "Open the live JobsDoctor →"; return a;
+}
 
 /* ---------- intake chat ---------- */
 function addMsg(text, who, extra){
@@ -503,6 +524,8 @@ function showTyping(){
 }
 function setChips(list){
   const c = $("chips"); c.innerHTML = "";
+  c.classList.toggle("menu", list === STATUS_CHIPS || list === GRAD_CHIPS);
+  if (list.length) $("msgs").appendChild(c);   // place the choices right under the latest question
   list.forEach(item => {
     const b = document.createElement("button"); b.type = "button"; b.className = "chip";
     const label = typeof item === "string" ? item : item.label;
@@ -513,7 +536,7 @@ function setChips(list){
   requestAnimationFrame(() => { $("msgs").scrollTop = $("msgs").scrollHeight; });
 }
 function chipsForTurn(turn){
-  if (turn === 1) return STATUS_CHIPS;
+  if (turn === 1) return state.gradAsked ? GRAD_CHIPS : STATUS_CHIPS;
   if (turn === REFLECT_STEP) return ["Yes, that's it", {label:"Not quite…", action:() => { setChips([]); $("msgIn").placeholder = "Tell her how you'd put it…"; $("msgIn").focus(); }}];
   if (turn >= TOTAL_STEPS) return ["That's everything"];
   return [];
@@ -529,6 +552,12 @@ function showError(msg, retryFn){
   $("msgs").appendChild(n); $("msgs").scrollTop = $("msgs").scrollHeight;
 }
 
+async function nurseSays(text, turn){
+  const t = showTyping(); await sleep(650); t.remove();
+  state.turn = turn; state.messages.push({role:"assistant", content:text}); save();
+  addMsg(text, "bot"); setProgress(); busy = false;
+}
+
 async function askNext(){
   busy = true; setChips([]); setProgress();
   if (state.turn >= AI_STEPS){
@@ -536,25 +565,41 @@ async function askNext(){
     state.turn = TOTAL_STEPS; state.messages.push({role:"assistant", content:FINAL_Q}); save();
     addMsg(FINAL_Q, "bot"); setChips(chipsForTurn(TOTAL_STEPS)); setProgress(); busy = false; $("msgIn").focus(); return;
   }
+  if (state.turn === 0){
+    // Step 1 is a simple menu, so it's scripted instead of written by the AI
+    await nurseSays(`Hi ${state.name}, welcome in. Which best describes where you are right now?`, 1);
+    setChips(STATUS_CHIPS); return;
+  }
+  if (state.turn === 1){
+    const status = (state.messages[state.messages.length-1] || {}).content || "";
+    if (!state.gradAsked && /student/i.test(status)){
+      state.gradAsked = true;            // students: one tap-to-choose graduation question
+      await nurseSays(GRAD_Q, 1); setChips(GRAD_CHIPS); return;
+    }
+    await nurseSays(RUNDOWN_Q, 2);       // step 2: the open "what brings you in" question
+    $("msgIn").placeholder = "A few sentences is perfect…"; $("msgIn").focus(); return;
+  }
   const t = showTyping();
   try {
     const data = await api({ mode:"chat", turn: state.turn + 1, messages: state.messages });
     t.remove();
     state.turn += 1;
-    state.messages.push({role:"assistant", content:data.reply}); save();
+    state.messages.push({role:"assistant", content:data.reply});
+    if (state.turn === REFLECT_STEP) state.reflectIdx = state.messages.length - 1;
+    save();
     addMsg(data.reply, "bot", state.turn === REFLECT_STEP ? "reflect" : "");
     setProgress(); setChips(chipsForTurn(state.turn));
     busy = false; $("msgIn").focus();
   } catch(e) {
     t.remove(); busy = false;
-    if (e.message === "OFFLINE"){ showError(OFFLINE_MSG); track("ai_offline"); }
+    if (e.message === "OFFLINE"){ showError(OFFLINE_MSG); const l = offlineLink(); if (l) { const n = $("msgs").lastElementChild; n.appendChild(document.createElement("br")); n.appendChild(l); } track("ai_offline"); }
     else { showError(e.message, askNext); track("ai_error", {stage:"intake"}); }
   }
 }
 
 async function answer(text){
   text = text.trim(); if (!text || busy) return;
-  setChips([]); $("msgIn").value = ""; $("msgIn").placeholder = "Type your answer…";
+  setChips([]); $("msgIn").value = ""; $("msgIn").style.height = "auto"; $("msgIn").placeholder = "Type your answer…";
   addMsg(text, "me");
   state.messages.push({role:"user", content:text}); save();
   track("question_answered", {step: state.turn});
@@ -680,9 +725,9 @@ function show(view){
   document.body.classList.toggle("on-landing", view === "landing");
   $("resetBtn").classList.toggle("hidden", view === "landing" || view === "checkin");
   if (view === "chat"){
+    $("composer").before($("chips"));   // keep the choices box safe before clearing the conversation
     $("msgs").innerHTML = ""; setChips([]); setProgress();
-    let botCount = 0;
-    state.messages.slice(1).forEach(m => { if (m.role === "user") addMsg(m.content, "me"); else { botCount++; addMsg(m.content, "bot", botCount === REFLECT_STEP ? "reflect" : ""); } });
+    state.messages.forEach((m, i) => { if (i === 0) return; addMsg(m.content, m.role === "user" ? "me" : "bot", i === state.reflectIdx ? "reflect" : ""); });
     const last = state.messages[state.messages.length-1];
     if (!last || last.role === "user"){ if (state.turn >= TOTAL_STEPS) startWaiting(); else askNext(); }
     else setChips(chipsForTurn(state.turn));
@@ -699,6 +744,9 @@ $("checkinForm").addEventListener("submit", e => {
   save(); track("checked_in"); show("chat");
 });
 $("composer").addEventListener("submit", e => { e.preventDefault(); answer($("msgIn").value); });
+// Enter sends, Shift+Enter adds a new line; the box grows as you type
+$("msgIn").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); answer($("msgIn").value); } });
+$("msgIn").addEventListener("input", () => { const t = $("msgIn"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 150) + "px"; });
 $("resetBtn").onclick = () => { state = fresh(); save(); show("landing"); };
 
 // Resume where the visitor left off

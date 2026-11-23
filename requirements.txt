@@ -1,0 +1,2 @@
+# JobsDoctor uses only Python's standard library, so there are no packages to install.
+# Render runs "pip install -r requirements.txt" by default; this empty file makes that step a no-op.

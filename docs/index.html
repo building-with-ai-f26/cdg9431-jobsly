@@ -71,7 +71,7 @@ footer{padding:28px 0 48px;color:var(--muted);font-size:14px;border-top:1px soli
 </section>
 
 <section>
-  <h2>PRD v2</h2>
+  <h2>PRD v3</h2>
 
   <h3>Reachable user</h3>
   <p>Business students in my program who are actively looking for internships or first jobs, and all of them use LinkedIn. Many aren't sure yet which roles fit them, what they pay, or where to start.</p>
@@ -102,7 +102,7 @@ footer{padding:28px 0 48px;color:var(--muted);font-size:14px;border-top:1px soli
   <ol class="flow">
     <li>User enters a first name to start.</li>
     <li>The AI intake nurse asks where they are, what they're drawn to and what they've done, then two reflective questions; she reflects back the criterion behind the job title and the user confirms or corrects it, then she covers location, pay and deal-breakers.</li>
-    <li>The app builds a Career Plan dashboard: guiding principle, the areas to target (what each is, why it fits, where to look) and the specific roles within each, with pay estimates, questions to ask, how to get the meeting, a pitch, and next steps.</li>
+    <li>The doctor writes a job prescription: a diagnosis and guiding principle, the areas to target (what each is, why it fits, where to look) with specific roles and pay estimates, the one question to ask every employer, how to get the meeting, a pitch, and next steps.</li>
   </ol>
 
 
@@ -111,41 +111,67 @@ footer{padding:28px 0 48px;color:var(--muted);font-size:14px;border-top:1px soli
 
   <h3>How this build tests it</h3>
   <ul class="ng">
-    <li>A real Claude-powered run, end to end: six questions, then a full Career Plan dashboard.</li>
-    <li>The dashboard follows a fixed coaching structure (guiding principle, areas to target with specific roles and pay, questions to ask, how to get the meeting, pitch, next steps) that a general chatbot doesn't give you by default.</li>
-    <li>PostHog tracks how many people who start the chat reach a finished plan, where they drop off, and whether they copy their pitch or check off next steps.</li>
-    <li>Pod testers answer one question afterward: "Would you act on this plan this week?"</li>
+    <li>The app is now public on Render, so classmates can run the full visit on their own phones: intake, reflection, waiting room, prescription.</li>
+    <li>PostHog tracks the funnel from Get Started to check-in, through each intake step, to "prescription opened", plus how often people confirm the nurse's reflection ("Yes, that's it") versus correct it.</li>
+    <li>Testers answer one question afterward: "Would you act on this prescription this week?"</li>
   </ul>
 
   <h3>How the app works</h3>
   <ol class="flow">
-    <li>The user clicks Get Started, checks in with a first name, and chats with the intake nurse in the browser.</li>
-    <li>Each answer goes to a small JobsDoctor server running on my computer. The server holds the API key (in a private <code>.env</code> file) and the coaching playbook, so neither is visible in the browser or on GitHub.</li>
-    <li>The server sends the conversation to Claude (Sonnet 5.5) with instructions for each of eight intake steps; the app adds a final "anything else?" question. While the prescription is written, the waiting room shows the nurse, a heart monitor and an Rx pad.</li>
-    <li>The server then asks Claude to return the Career Plan in a fixed structure, and the app renders it as a dashboard the user can check off, copy from, or save as a PDF.</li>
+    <li>The visitor clicks Get Started, checks in with a first name, and chats with the intake nurse in the browser.</li>
+    <li>Each answer goes to the JobsDoctor server (Python) on Render. The server holds the API key in Render's private settings and keeps the coaching playbook, so neither is visible in the browser or on GitHub.</li>
+    <li>The nurse asks one question at a time: a tap-to-choose status menu, then "What brings you in today?" for a short rundown. After that, the server sends the conversation to Claude (Sonnet 5.5) with instructions for each intake step; the app adds a final "anything else?" question.</li>
+    <li>While the waiting room plays (at least 20 seconds), the server asks Claude for the prescription in a fixed JSON structure, and the app renders it as a dashboard the user can check off, copy from, or save as a PDF.</li>
   </ol>
 
+  <h3>Hosting, database, and security</h3>
+  <ul class="ng">
+    <li><strong>Hosting:</strong> the app runs on <strong>Render</strong> (free plan) as a Python web service pulled from this GitHub repo. The Product Page stays on <strong>GitHub Pages</strong>. Render fits because the app needs a running server to hold the key; GitHub Pages can only serve files.</li>
+    <li><strong>Database:</strong> <strong>none, on purpose.</strong> Nothing needs to be shared between visitors, so each person's answers and prescription stay in their own browser. No accounts, no stored personal data, and much less to secure.</li>
+    <li><strong>Security:</strong> the API key lives only in Render's environment settings; AI calls are rate-limited per visitor (20 per 10 minutes) and capped site-wide (300 per day); a hard monthly spending cap is set on the Anthropic account; requests must be JSON and under 100 KB; all AI text is escaped before display. Full audit in <code>SECURITY.md</code>.</li>
+  </ul>
+
   <h3>Cost per run</h3>
-  <p>About 2–3 cents per completed run: six Claude calls on Sonnet 5.5, priced at $2 per million input tokens and $10 per million output tokens. The server prints the exact cost of every call in the Terminal.</p>
+  <p>About 5–8 cents per completed visit: eight Claude calls on Sonnet 5.5 (seven AI intake steps plus the prescription; the first question is a simple menu), priced at $2 per million input tokens and $10 per million output tokens. The server logs the exact cost of every call. The daily cap of 300 AI calls limits the worst case to roughly $3 a day.</p>
 
   <h3>Non-goals (for now)</h3>
   <ul class="ng">
     <li><strong>No social feed.</strong> No posts, likes, or popularity contest. Users keep LinkedIn for that.</li>
     <li><strong>No mass-apply.</strong> No auto-apply bots; JobsDoctor helps you choose, not spam.</li>
-    <li><strong>No public AI access yet.</strong> The AI runs on my computer to keep the API key private; a hosted version comes next.</li>
+    <li><strong>No accounts or server-side history.</strong> Prescriptions stay in the visitor's browser; saving and revisiting a plan across devices comes later.</li>
   </ul>
 </section>
 
 <section>
   <h2>Build log</h2>
   <dl class="log">
-    <dt>Progress (Build 3, in progress)</dt>
+    <dt>What shipped (Build 3)</dt>
     <dd><ul>
-      <li>New concept and name: JobsDoctor, "Resuscitate your job search." New logo (red italic wordmark with a stethoscope) and a beating-heart landing page.</li>
+      <li>New concept and name: <strong>JobsDoctor</strong>, "Resuscitate your job search." New logo and a beating-heart landing page.</li>
       <li>Redesigned the AI intake around the "aha" moment: two reflective questions, then the nurse reflects back what she's hearing and the user confirms or corrects it.</li>
-      <li>The prescription now opens with a Diagnosis (what the user realized, in their words) and leads with the one question to ask every employer.</li>
-      <li>Animated waiting room: the nurse taking notes, a career-vitals monitor, and the doctor writing the Rx, then "Your prescription is ready."</li>
+      <li>Animated waiting room (nurse taking notes, career-vitals monitor, the doctor writing the Rx), then "Your prescription is ready."</li>
+      <li>The prescription opens with a Diagnosis and leads with the one question to ask every employer.</li>
+      <li><strong>Deployed publicly on Render</strong>, with the API key in Render's settings, per-visitor and daily rate limits, request validation and security headers.</li>
+      <li>Security audit (<code>SECURITY.md</code>), a press-play live check (<code>security_check.py</code>), and an AGENTS.md Shipping section and "Ask me first" list.</li>
     </ul></dd>
+    <dt>What I learned</dt>
+    <dd><ul>
+      <li>GitHub Pages can only show files; anything that holds a secret has to run on a server. Render runs our Python server and keeps the key in its own settings.</li>
+      <li>Once an AI app is public, cost is the main security risk: rate limits and a spending cap matter more than logins for an app with no database.</li>
+      <li>Breaking my own app on purpose found five real issues that normal use never showed.</li>
+      <li>Running builds from VS Code with the key stored once outside the project makes each new build a one-click run.</li>
+    </ul></dd>
+    <dt>What broke</dt>
+    <dd><ul>
+      <li>The first security review found no rate limit (30 of 30 rapid AI calls went through), cross-site requests were accepted, and a malformed request could hang the server. All fixed.</li>
+      <li>VS Code wouldn't open: the default download was for Apple-chip Macs and this Mac is Intel.</li>
+      <li>The new logo's italic capital J had a decorative swash; switched to Libre Baskerville after comparing five fonts.</li>
+      <li>After the repo moved into the class organization, the Settings tab disappeared (the class owns it now), and GitHub's upload page won't take files and folders in one drag.</li>
+    </ul></dd>
+    <dt>Spend</dt>
+    <dd>AI: well under $1 so far across all builds and tests (about 5–8 cents per completed visit). Hosting: $0 (Render free plan, GitHub Pages). Analytics: $0 (PostHog free tier). Monthly AI spending cap set on the Anthropic account.</dd>
+    <dt>Hours (Build 3)</dt>
+    <dd>About 5 hours this build (about 13 total).</dd>
     <dt>Progress (Build 2)</dt>
     <dd><ul>
       <li>Scout now runs on real AI (Claude Sonnet 5.5): five tailored questions plus a closing "anything else?"</li>
@@ -154,31 +180,32 @@ footer{padding:28px 0 48px;color:var(--muted);font-size:14px;border-top:1px soli
       <li>Installed PostHog on the Product Page and the app: pageviews, clicks, session replay, and custom events (chat started, question answered, plan generated, pitch copied).</li>
       <li>Added AGENTS.md describing the project structure and how to run it.</li>
     </ul></dd>
-    <dt>Lessons</dt>
+    <dt>Lessons (Build 2)</dt>
     <dd><ul>
       <li>An API key can't go in a public repo or web page: GitHub scans public repos, and exposed Anthropic keys get disabled automatically. The key has to live on a server.</li>
       <li>Keeping the coaching prompts on the server also protects the product's structure, which is part of what makes it different from a general chatbot.</li>
       <li>Asking the AI for a fixed JSON structure makes the plan consistent enough to render as a dashboard.</li>
       <li>The AI job-search space is crowded, but most tools push mass-applying. Coaching people toward fewer, better-fit applications is an open lane.</li>
     </ul></dd>
-    <dt>Problems</dt>
+    <dt>Problems (Build 2)</dt>
     <dd><ul>
       <li>GitHub Pages can only serve files, so the AI can't run on the public site yet. For now it runs on my computer; a hosted version (e.g., a Cloudflare Worker) is next.</li>
       <li>AI pay ranges are estimates and can be off, so the dashboard labels them and tells users to verify pay and deadlines.</li>
     </ul></dd>
-    <dt>Costs</dt>
+    <dt>Costs (Build 2)</dt>
     <dd>About 2–3 cents per completed run on Claude Sonnet 5.5. Hosting on GitHub Pages and PostHog's free tier: $0.</dd>
-    <dt>Hours</dt>
-    <dd>About 8 hours total so far.</dd>
+    <dt>Hours (Build 2)</dt>
+    <dd>About 8 hours total at that point.</dd>
     <dt>Earlier updates</dt>
     <dd><ul>
+      <li><strong>Nov 23:</strong> deployed to Render and completed the security audit.</li>
       <li><strong>Nov 22:</strong> renamed to JobsDoctor and rebuilt the experience around a career-clinic visit.</li>
       <li><strong>Nov 15:</strong> pivoted from a general LinkedIn alternative to a personalized career coach and renamed the product Jobsly (working title).</li>
       <li><strong>Nov 14:</strong> simplified the reachable user, added a "Back to Product Page" link, and acted on Build 1 feedback.</li>
       <li><strong>Build 1:</strong> scripted onboarding chat and results page; learned GitHub, GitHub Pages, and why API keys stay out of GitHub.</li>
     </ul></dd>
     <dt>Next</dt>
-    <dd>Host the AI so anyone can try it from the Product Page, let users save and revisit their plan, and add coaching follow-ups after the first plan.</dd>
+    <dd>Rework the prescription dashboard, let users save and revisit their prescription, and add live company openings to each area to target.</dd>
   </dl>
 </section>
 
@@ -189,6 +216,9 @@ footer{padding:28px 0 48px;color:var(--muted);font-size:14px;border-top:1px soli
 (function(){
   var h=location.hostname, m=h.match(/^([^.]+)\.github\.io$/i), seg=location.pathname.split('/').filter(Boolean)[0];
   if(m && seg){ var a=document.getElementById('repoLink'); a.href='https://github.com/'+m[1]+'/'+seg; a.style.display='inline-block'; }
+  // On GitHub Pages, send "Try the prototype" to the live app on Render (where the AI runs)
+  var live=((window.JOBSLY_CONFIG||{}).liveAppUrl||'').replace(/\/$/,'');
+  if(m && live){ var t=document.querySelector('a.btn[href="app.html"]'); if(t){ t.href=live+'/app.html'; t.textContent='Try the live app →'; } }
 })();
 </script>
 </body>

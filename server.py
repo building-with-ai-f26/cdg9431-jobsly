@@ -11,6 +11,8 @@ It opens the app in your browser automatically.
 """
 import getpass
 import threading
+import time
+from collections import deque
 import webbrowser
 import json
 import os
@@ -29,6 +31,15 @@ ENV_FILE = ROOT / ".env"
 HOME_ENV = Path.home() / ".jobsdoctor" / ".env"
 LEGACY_ENVS = [Path.home() / "Downloads" / "jobsly" / ".env", Path.home() / "jobsly" / ".env"]
 PORT = int(os.environ.get("PORT", "8000"))
+ON_RENDER = bool(os.environ.get("RENDER"))  # Render sets this automatically on its servers
+
+# ---- Cost protection (per-visitor and daily limits on AI calls) ----
+# One full visit uses 8 AI calls (AI intake steps 3-9 + 1 prescription; the first steps are scripted), so 20 per 10 minutes
+# allows about two visits per person and stops anyone hammering the AI.
+RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_10_MIN", "20"))
+RATE_WINDOW = 600  # seconds
+DAILY_CAP = int(os.environ.get("DAILY_AI_CALL_CAP", "300"))  # whole site, about 33 visits a day
+MAX_BODY = 100_000  # bytes
 
 # Price per million tokens (USD) for the default model, used to report cost per run.
 PRICES = {
@@ -72,6 +83,8 @@ def ensure_key():
     load_env()
     if os.environ.get("ANTHROPIC_API_KEY"):
         return
+    if ON_RENDER or not sys.stdin.isatty():
+        sys.exit("ANTHROPIC_API_KEY is not set. On Render: open your service > Environment > add ANTHROPIC_API_KEY, then redeploy.")
     print("\nNo API key found yet. Paste your Anthropic API key below.")
     print("(It won't show as you paste. That's normal. Press Enter when done.)\n")
     key = getpass.getpass("API key: ").strip()
@@ -84,28 +97,32 @@ def ensure_key():
 # ---------------------------------------------------------------------------
 # The coaching playbook. It stays on the server, so it is not visible in the browser.
 # ---------------------------------------------------------------------------
-INTAKE_STEPS = 8  # questions the AI asks; the app adds one closing question
+INTAKE_STEPS = 9  # steps 1-2 are scripted in the app (status menu, short rundown); the AI asks steps 3-9
 
-# What the intake nurse does at each step. The reflective steps (4-6) are what help
-# people say out loud what they actually want, not just which job title they think fits.
+# What the intake nurse asks at each AI step. One question per step, never two.
+# The reflective steps (4-6) help people say out loud what they actually want, not just which title fits.
 STAGES = {
-    1: "Ask where they are right now: a current student (and when they graduate), a recent graduate, working and looking to advance, or working and looking to pivot.",
-    2: "Ask what field, roles or industries they're drawn to. If they're unsure, ask about their background instead.",
-    3: "Ask what they've actually done so far (jobs, internships, projects) and what they're strongest at.",
-    4: "Ask a reflective question: a specific moment at work or school when they felt most engaged or most like themselves, and what exactly they were doing in that moment.",
-    5: "Ask about the tension underneath their search, tailored to what they've said so far. Usually that is either the part of past work they'd happily never do again, or how they'd split an ideal week between hands-on doing or building and leading, deciding or client-facing work.",
-    6: ("Reflect back what you're hearing. In one or two warm sentences, name the criterion behind the job title that their answers point to, "
-        "using their own words where you can (for example: 'It sounds like you want to use your business training but stay hands-on with the technology itself, not only manage it.'). "
-        "Then ask whether that rings true, or how they'd put it differently. This message may be up to 70 words."),
-    7: "Briefly acknowledge their answer; if they corrected your reflection, adopt their version. Then ask about location limits and the minimum pay they'd accept.",
-    8: "Ask about deal-breakers, plus any meetings, leads or applications already in motion.",
+    3: "Ask ONE follow-up question about the most important thing missing from their rundown, usually what they have actually done so far or what they are strongest at.",
+    4: "Ask ONE reflective question: a specific moment at work or school when they felt most engaged or most like themselves, and what they were doing.",
+    5: ("Ask ONE follow-up that digs beneath the most telling thing they have said so far: a frustration they vented, a pattern that keeps repeating, or something that clearly energizes them. "
+        "Build on their own words to find out what really matters to them underneath it. Never ask a generic or stock question."),
+    6: ("Reflect back what you are hearing. In one or two warm sentences, name the criterion behind the job title that their answers point to, "
+        "using their own words where you can. It must come from this person's answers, not from a template. Examples of the kind of sentence, for very different people: "
+        "'It sounds like you want to see your work through, not build something and hand it off.' / "
+        "'It sounds like steady hours and a team you trust matter more to you than a bigger title.' / "
+        "'It sounds like you want to use your business training but stay hands-on with the technology itself.' "
+        "Then ask only: does that ring true? This message may be up to 70 words."),
+    7: "Briefly acknowledge their answer; if they corrected your reflection, adopt their version. Then ask ONE question: where do they want to work, which cities or remote?",
+    8: "Ask ONE question: the minimum yearly pay they would accept.",
+    9: "Ask ONE question: do they have any interviews, meetings or leads already in motion?",
 }
 
 INTAKE_PROMPT = """You are the intake nurse at JobsDoctor, an AI career clinic whose tagline is "Resuscitate your job search".
 You are taking a short intake before the doctor writes this person's job prescription.
 
 Rules:
-- Ask exactly ONE question per message. Keep it under 45 words, warm and plain. No lists, no markdown.
+- Ask exactly ONE short question per message, never two questions in one, and never "and also". Two sentences at most, under 35 words, warm and plain.
+- No lists, no markdown, no parentheses, and never spell out a menu of options inside the sentence.
 - Start with a few words reacting to their last answer, then ask your question.
 - A light clinic touch is welcome now and then, but never more than one medical pun in the whole intake.
 - Do not give advice yet. Listen closely: the goal is to help them notice what they really want, not just collect facts.
@@ -150,7 +167,7 @@ Return ONLY valid JSON, no other text, in exactly this shape:
   "closing_note": "a short, personal word of encouragement from the doctor"
 }
 Include as many areas as genuinely fit this person (usually 2 to 4), ordered best fit first, each with 2 to 4 specific roles.
-Give 4 questions_to_ask. The FIRST must directly test their guiding principle with an employer (for example: "Will this role let me get hands-on with the technology we're building or implementing, or will I only work on the management side?").
+Give 4 questions_to_ask. The FIRST must directly test this person's own guiding principle with an employer, written for them, not copied from an example. For instance, someone who wants to see work through might ask "How long do people in this role usually own a product or account?", while someone who wants to stay technical might ask "How much of this role is hands-on with the technology versus managing it?"
 Give 4 get_the_meeting items and 5 next_steps. Use "Not shared" for any profile field they didn't give."""
 
 # ---------------------------------------------------------------------------
@@ -192,6 +209,8 @@ def call_claude(system, messages, max_tokens):
 def clean_messages(raw):
     msgs = []
     for m in raw if isinstance(raw, list) else []:
+        if not isinstance(m, dict):
+            continue
         role = m.get("role")
         content = str(m.get("content", ""))[:2000]
         if role in ("user", "assistant") and content.strip():
@@ -207,6 +226,39 @@ def parse_plan(text):
     return json.loads(m.group(0))
 
 # ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+_lock = threading.Lock()
+_hits = {}                      # visitor -> deque of request times
+_day = {"date": None, "count": 0}
+
+def check_rate(visitor):
+    """Returns None if allowed, or a message explaining the limit."""
+    now = time.time()
+    today = time.strftime("%Y-%m-%d", time.gmtime(now))
+    with _lock:
+        if _day["date"] != today:
+            _day["date"], _day["count"] = today, 0
+        if _day["count"] >= DAILY_CAP:
+            return "JobsDoctor has reached today's visit limit. Please come back tomorrow."
+        q = _hits.setdefault(visitor, deque())
+        while q and now - q[0] > RATE_WINDOW:
+            q.popleft()
+        if len(q) >= RATE_LIMIT:
+            return "You're going a little fast. Please wait a few minutes and try again."
+        q.append(now)
+        _day["count"] += 1
+        if len(_hits) > 5000:  # keep memory small
+            for k in [k for k, v in _hits.items() if not v or now - v[-1] > RATE_WINDOW]:
+                _hits.pop(k, None)
+    return None
+
+class BadRequest(Exception):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status, self.message = status, message
+
+# ---------------------------------------------------------------------------
 # Web server: serves the docs/ folder and answers /api/chat
 # ---------------------------------------------------------------------------
 class Handler(SimpleHTTPRequestHandler):
@@ -215,6 +267,45 @@ class Handler(SimpleHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         pass  # keep the Terminal quiet
+
+    def end_headers(self):
+        # Basic browser protections on every response
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        super().end_headers()
+
+    def list_directory(self, path):
+        self.send_error(404, "File not found")  # never show folder listings
+        return None
+
+    def visitor(self):
+        # Render sits behind a proxy, so the visitor's address comes from a header there.
+        for h in ("True-Client-IP", "CF-Connecting-IP"):
+            if self.headers.get(h):
+                return self.headers[h].strip()
+        xff = self.headers.get("X-Forwarded-For")
+        if xff:
+            return xff.split(",")[0].strip()
+        return self.client_address[0]
+
+    def read_json(self):
+        if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+            raise BadRequest(415, "Requests must be sent as JSON.")
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            raise BadRequest(411, "Missing request size.")
+        if length <= 0 or length > MAX_BODY:
+            raise BadRequest(413, "That request is too large.")
+        try:
+            req = json.loads(self.rfile.read(length))
+        except ValueError:
+            raise BadRequest(400, "That request wasn't valid JSON.")
+        if not isinstance(req, dict):
+            raise BadRequest(400, "That request wasn't in the expected format.")
+        return req
 
     def send_json(self, status, payload):
         body = json.dumps(payload).encode()
@@ -228,8 +319,17 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path != "/api/chat":
             return self.send_json(404, {"error": "Not found"})
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            req = json.loads(self.rfile.read(min(length, 100_000)) or b"{}")
+            req = self.read_json()
+        except BadRequest as e:
+            self.close_connection = True
+            return self.send_json(e.status, {"error": e.message})
+        limited = check_rate(self.visitor())
+        if limited:
+            print(f"  Rate limit: refused a request ({limited[:40]}...)")
+            return self.send_json(429, {"error": limited})
+        try:
+            if req.get("mode") not in ("chat", "plan"):
+                return self.send_json(400, {"error": "Unknown request type."})
             msgs = clean_messages(req.get("messages"))
             if req.get("mode") == "plan":
                 text, usage = call_claude(PLAN_PROMPT, msgs + [{"role": "user", "content": "Please write my job prescription now."}] if msgs[-1]["role"] == "assistant" else msgs, 16000)
@@ -238,7 +338,10 @@ class Handler(SimpleHTTPRequestHandler):
                 run_cost = TOTALS["input"] / 1e6 * PRICES.get(usage["model"], PRICES["claude-sonnet-5-5"])[0] + TOTALS["output"] / 1e6 * PRICES.get(usage["model"], PRICES["claude-sonnet-5-5"])[1]
                 print(f"  Total since server started: {TOTALS['input']} input + {TOTALS['output']} output tokens, about ${run_cost:.4f}")
                 return self.send_json(200, {"plan": plan, "usage": usage})
-            turn = max(1, min(INTAKE_STEPS, int(req.get("turn", 1))))
+            try:
+                turn = max(min(STAGES), min(INTAKE_STEPS, int(req.get("turn", 3))))
+            except (TypeError, ValueError):
+                return self.send_json(400, {"error": "That request wasn't in the expected format."})
             system = INTAKE_PROMPT.format(turn=turn, total=INTAKE_STEPS, stage=STAGES[turn])
             text, usage = call_claude(system, msgs, 4000)
             if not text.strip():
@@ -247,7 +350,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"reply": text.strip(), "usage": usage})
         except urllib.error.HTTPError as e:
             detail = e.read().decode(errors="ignore")[:300]
-            msg = "Your API key was rejected. Delete the .env file and run the server again to re-enter it." if e.code == 401 else f"Claude returned an error ({e.code})."
+            if e.code == 401:
+                msg = "The clinic's AI key isn't working right now. Please try again later." if ON_RENDER else "Your API key was rejected. Delete ~/.jobsdoctor/.env and run the server again to re-enter it."
+            else:
+                msg = "The AI service had a problem. Please try again in a moment."
             print(f"  Error from Claude ({e.code}): {detail}")
             return self.send_json(502, {"error": msg})
         except urllib.error.URLError as e:
@@ -259,7 +365,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(500, {"error": "Something went wrong building your answer. Please try again."})
 
 def start_server():
-    # Use 8000, or the next free port if an older build is still running.
+    if ON_RENDER:  # in the cloud: listen on Render's port, on all interfaces
+        return ThreadingHTTPServer(("0.0.0.0", PORT), Handler), PORT
+    # On your computer: use 8000, or the next free port if an older build is still running.
     for port in range(PORT, PORT + 20):
         try:
             return ThreadingHTTPServer(("127.0.0.1", port), Handler), port
@@ -272,6 +380,10 @@ def main():
         sys.exit("Couldn't find the docs folder. Run this from the project folder.")
     ensure_key()
     server, port = start_server()
+    if ON_RENDER:
+        print(f"JobsDoctor is live on Render (port {port}). Limits: {RATE_LIMIT} AI calls per visitor per 10 min, {DAILY_CAP} per day.")
+        server.serve_forever()
+        return
     url = f"http://localhost:{port}/app.html"
     print("JobsDoctor is running on your computer.")
     print(f"  App:          {url}")
